@@ -224,6 +224,7 @@ function load(){
     if(raw){const s=Object.assign(defaults(),JSON.parse(raw));
       if(!Array.isArray(s.habits)||s.habits.length<2) s.habits=defaults().habits;
       if(!s.logs||typeof s.logs!=='object') s.logs={};
+      normalizeLogs(s.logs);
       return s;}
   }catch(e){}
   return defaults();
@@ -317,7 +318,19 @@ function commitLog(k,l){
   if(Object.keys(l).length) state.logs[k]=l; else delete state.logs[k];
   save();
 }
-function hasCheckin(l){return !!(l&&(l.energy||l.mood||typeof l.sleep==='number'||l.cramps||l.acne||l.h0||l.h1||l.notes));}
+function moodsOf(l){
+  if(!l) return [];
+  if(Array.isArray(l.mood)) return l.mood;
+  return (typeof l.mood==='string'&&l.mood)?[l.mood]:[];
+}
+function normalizeLogs(logs){
+  Object.keys(logs).forEach(k=>{
+    const l=logs[k];if(!l||typeof l!=='object'){delete logs[k];return;}
+    const m=moodsOf(l);
+    if(m.length) l.mood=m; else delete l.mood;
+  });
+}
+function hasCheckin(l){return !!(l&&(l.energy||moodsOf(l).length||typeof l.sleep==='number'||l.cramps||l.acne||l.h0||l.h1||l.notes));}
 
 /* ---------- ui state ---------- */
 const ui={tab:'day',date:todayKey(),focusId:null};
@@ -331,6 +344,10 @@ function needStarts(){
 function segGroup(field,opts,cur){
   return '<div class="opts" role="group" aria-label="'+esc(field)+'">'+opts.map(o=>
     '<button type="button" class="opt" data-act="set" data-field="'+field+'" data-v="'+esc(o)+'" aria-pressed="'+(cur===o)+'">'+esc(o)+'</button>').join('')+'</div>';
+}
+function moodGroup(cur){
+  return '<div class="opts" role="group" aria-labelledby="l-mood">'+MOODS.map(o=>
+    '<button type="button" class="opt" data-act="toggle-mood" data-v="'+esc(o)+'" aria-pressed="'+cur.includes(o)+'">'+esc(o)+'</button>').join('')+'</div>';
 }
 function polar(cx,cy,r,deg){const a=(deg-90)*Math.PI/180;return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}
 function arcPath(cx,cy,r,s,e){
@@ -402,7 +419,7 @@ function renderDay(){
     '<div class="field"><span class="lbl" id="l-energy">Energy</span><div class="energy"><div class="erow" role="group" aria-labelledby="l-energy">'+
     [1,2,3,4,5].map(n=>'<button type="button" class="opt" data-act="set" data-field="energy" data-v="'+n+'" aria-pressed="'+(l.energy===n)+'" aria-label="Energy '+n+' of 5">'+n+'</button>').join('')+
     '</div><div class="caprow"><span class="cap">Low</span><span class="cap">High</span></div></div></div>'+
-    '<div class="field"><span class="lbl">Mood</span>'+segGroup('mood',MOODS,l.mood)+'</div>'+
+    '<div class="field"><span class="lbl" id="l-mood">Mood <span class="cap" style="font-weight:400">Select all that fit</span></span>'+moodGroup(moodsOf(l))+'</div>'+
     '<div class="field"><label class="lbl" for="sleep">Sleep (hours)</label><input type="number" id="sleep" inputmode="decimal" step="0.5" min="0" max="16" data-field="sleep" data-type="num" value="'+(typeof l.sleep==='number'?l.sleep:'')+'"></div>'+
     '<div class="field"><span class="lbl">Cramps</span>'+segGroup('cramps',CRAMPS,l.cramps)+'</div>'+
     '<div class="field"><span class="lbl">Acne</span>'+segGroup('acne',ACNE,l.acne)+'</div>'+
@@ -431,7 +448,7 @@ function renderWeek(){
     const n=ws+i,k=dk(n),info=cycleInfo(n,S,P,T),l=state.logs[k]||{};
     const bits=[];
     if(l.energy) bits.push('Energy '+l.energy);
-    if(l.mood) bits.push(l.mood);
+    if(moodsOf(l).length) bits.push(moodsOf(l).join(', '));
     if(l.h0) bits.push(shortLabel(state.habits[0]));
     if(l.h1) bits.push(shortLabel(state.habits[1]));
     html+='<section class="wday'+(n===T?' today':'')+'" data-phase="'+info.phase+'" aria-label="'+esc(fmtLong(n))+'">'+
@@ -483,7 +500,7 @@ function renderPatterns(){
     total++;const a=agg[info.phase];a.n++;
     if(l.energy){a.energy.push(l.energy);const cd=Math.min(info.day,S.len);(byDay[cd]=byDay[cd]||[]).push(l.energy);}
     if(typeof l.sleep==='number') a.sleep.push(l.sleep);
-    if(l.mood) a.moods[l.mood]=(a.moods[l.mood]||0)+1;
+    moodsOf(l).forEach(m=>{a.moods[m]=(a.moods[m]||0)+1;});
     if(l.cramps&&l.cramps!=='None') a.cramps++;
     if(l.acne&&l.acne!=='None') a.acne++;
     if(l.h0) a.h0++;
@@ -493,7 +510,7 @@ function renderPatterns(){
   const pct=(h,n)=>n?Math.round(h/n*100)+'%':'–';
   const rows=ORDER.map(p=>{
     const a=agg[p],e=avg(a.energy);
-    const top=Object.keys(a.moods).sort((x,y)=>a.moods[y]-a.moods[x])[0]||'–';
+    const top=Object.keys(a.moods).sort((x,y)=>a.moods[y]-a.moods[x]||MOODS.indexOf(x)-MOODS.indexOf(y)).slice(0,2).join(', ')||'–';
     return '<tr data-phase="'+p+'"><th scope="row">'+chip(p)+'</th><td>'+a.n+'</td><td>'+esc(PHASES[p].energy)+'</td>'+
       '<td>'+f1(e)+(e!=null?'<div class="bar" aria-hidden="true"><span style="width:'+(e/5*100)+'%"></span></div>':'')+'</td>'+
       '<td>'+f1(avg(a.sleep))+'</td><td>'+esc(top)+'</td><td>'+a.cramps+'</td><td>'+a.acne+'</td>'+
@@ -517,7 +534,7 @@ function renderPatterns(){
   }
   const chart=any?'<h2 style="margin-top:22px">Energy by cycle day</h2><svg class="cdchart" viewBox="0 0 '+W+' 94" role="img" aria-label="Average energy for each cycle day">'+bars+'</svg><p class="note">Bar colors match the phases. Taller bars mean higher average energy.</p>':'';
   return '<section class="panel"><h2>How your check-ins line up with the guide</h2>'+insight+
-    '<div class="tblwrap"><table class="tbl"><thead><tr><th>Phase</th><th>Days logged</th><th>Guide says</th><th>Your energy (1–5)</th><th>Sleep (hrs)</th><th>Common mood</th><th>Cramp days</th><th>Acne days</th><th>'+esc(shortLabel(state.habits[0]))+'</th><th>'+esc(shortLabel(state.habits[1]))+'</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+chart+'</section>';
+    '<div class="tblwrap"><table class="tbl"><thead><tr><th>Phase</th><th>Days logged</th><th>Guide says</th><th>Your energy (1–5)</th><th>Sleep (hrs)</th><th>Common moods</th><th>Cramp days</th><th>Acne days</th><th>'+esc(shortLabel(state.habits[0]))+'</th><th>'+esc(shortLabel(state.habits[1]))+'</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+chart+'</section>';
 }
 
 function renderGuide(){
@@ -604,6 +621,12 @@ document.addEventListener('click',e=>{
       const l=getLog(ui.date);
       if(l[f]===v) delete l[f]; else l[f]=v;
       commitLog(ui.date,l);render();break;}
+    case 'toggle-mood':{
+      const v=el.dataset.v,l=getLog(ui.date),m=moodsOf(l).slice();
+      const i=m.indexOf(v);if(i>-1) m.splice(i,1); else m.push(v);
+      const ordered=MOODS.filter(x=>m.includes(x));
+      if(ordered.length) l.mood=ordered; else delete l.mood;
+      commitLog(ui.date,l);render();break;}
     case 'todo-add':addTodo(el.dataset.date);break;
     case 'todo-toggle':{
       const l=getLog(el.dataset.date);
@@ -659,6 +682,7 @@ document.addEventListener('change',e=>{
         state=Object.assign(defaults(),obj);
         state.periodStarts=state.periodStarts.filter(s=>DAY_RE.test(s));
         if(!state.logs||typeof state.logs!=='object') state.logs={};
+        normalizeLogs(state.logs);
         if(!Array.isArray(state.habits)||state.habits.length<2) state.habits=defaults().habits;
         save();render();
       }catch(err){alert('That file is not a Cycle Planner backup.');}
