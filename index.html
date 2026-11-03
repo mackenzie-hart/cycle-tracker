@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Cycle Planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23456158' stroke-width='5'/%3E%3C/svg%3E">
 <style>
 :root{
   --paper:#f2f3ef; --panel:#fafaf7; --ink:#25292a; --ink-2:#5f6769; --line:#d9ddd7;
@@ -77,7 +78,13 @@ select{max-width:220px}
 .ring{width:200px;height:200px;display:block}
 .ring-n{font-size:46px;font-weight:300;fill:currentColor}
 .ring-l{font-size:11.5px;fill:currentColor;opacity:.8}
-@media (max-width:640px){.hero{grid-template-columns:1fr;justify-items:start;gap:14px}.ring{width:170px;height:170px}}
+.hero-body{min-width:0}
+.hguide-d{margin:14px 0 14px;padding-top:12px;border-top:1px solid color-mix(in srgb,currentColor 22%,transparent)}
+.hguide-d summary{cursor:pointer;font-weight:600;font-size:.95rem;padding:2px 0}
+.hguide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 28px;margin-top:10px}
+.hguide h4{font-size:.85rem;font-weight:600;margin:0 0 2px}
+.hguide p{font-size:.95rem;margin:0;max-width:44ch}
+@media (max-width:640px){.hero{grid-template-columns:1fr;justify-items:start;gap:14px}.hero-body{justify-self:stretch}.ring{width:170px;height:170px}.hguide{grid-template-columns:1fr}}
 
 .cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:20px;margin-top:20px;align-items:start}
 .cols .panel + .panel{margin-top:0}
@@ -108,7 +115,6 @@ select{max-width:220px}
 .chip{display:inline-flex;align-items:center;gap:7px;padding:2px 10px 2px 8px;border-radius:999px;background:var(--pbg);color:var(--pfg);font-size:.85rem;font-weight:600;white-space:nowrap}
 .chip::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--pdot)}
 
-.guide summary{cursor:pointer;font-weight:600;margin-bottom:10px}
 .ggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 28px}
 .gsec p{max-width:56ch;color:var(--ink)}
 
@@ -134,7 +140,7 @@ select{max-width:220px}
 .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 
 .tblwrap{overflow-x:auto}
-.tbl{width:100%;border-collapse:collapse;font-size:.95rem;min-width:640px}
+.tbl{width:100%;border-collapse:collapse;font-size:.95rem;min-width:720px}
 .tbl th,.tbl td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .tbl th{font-weight:600}
 .bar{height:6px;background:var(--line);border-radius:3px;min-width:60px;margin-top:4px}
@@ -209,6 +215,7 @@ const PHASES={
 const MOODS=['Calm','Content','Energized','Social','Tender','Anxious','Irritable','Low','Flat'];
 const CRAMPS=['None','Mild','Moderate','Strong'];
 const ACNE=['None','Mild','Flaring'];
+const CRYING=['None','Once','A few times','A lot'];
 const TABS=[['day','Day'],['week','Week'],['month','Month'],['patterns','Patterns'],['guide','Guide'],['cycle','Cycle']];
 
 /* ---------- storage ---------- */
@@ -330,10 +337,10 @@ function normalizeLogs(logs){
     if(m.length) l.mood=m; else delete l.mood;
   });
 }
-function hasCheckin(l){return !!(l&&(l.energy||moodsOf(l).length||typeof l.sleep==='number'||l.cramps||l.acne||l.h0||l.h1||l.notes));}
+function hasCheckin(l){return !!(l&&(l.energy||moodsOf(l).length||typeof l.sleep==='number'||l.cramps||l.crying||l.acne||l.h0||l.h1||l.notes));}
 
 /* ---------- ui state ---------- */
-const ui={tab:'day',date:todayKey(),focusId:null};
+const ui={tab:'day',date:todayKey(),focusId:null,heroOpen:(window.matchMedia?window.matchMedia('(min-width: 700px)').matches:true)};
 (function(){const p=ui.date.split('-').map(Number);ui.monthY=p[0];ui.monthM=p[1]-1;})();
 
 /* ---------- small renderers ---------- */
@@ -376,6 +383,11 @@ function guideBlock(p){
     '<div class="gsec"><h3>Work and focus</h3><p>'+esc(g.work)+'</p></div>'+
     '<div class="gsec"><h3>Social and creative</h3><p>'+esc(g.social)+'</p></div></div>';
 }
+function heroGuide(p){
+  const g=PHASES[p];
+  return [['Energy and mood',g.mood],['Body',g.body],['Work and focus',g.work],['Social and creative',g.social]].map(x=>
+    '<div><h4>'+x[0]+'</h4><p>'+esc(x[1])+'</p></div>').join('');
+}
 function todosHTML(k){
   const t=(state.logs[k]&&state.logs[k].todos)||[];
   return '<ul class="todos">'+t.map(x=>
@@ -409,7 +421,8 @@ function renderDay(){
     ?'<button type="button" class="btn small" data-act="start-del" data-date="'+ui.date+'">Remove period start from this day</button>'
     :'<button type="button" class="btn small" data-act="start-quick">'+(isToday?'My period started today':'My period started on this day')+'</button>';
   html+='<section class="hero" data-phase="'+info.phase+'" aria-label="Where you are in your cycle">'+ringSVG(info,P)+
-    '<div><h3>'+esc(p.label)+' phase</h3><p class="focus">'+esc(p.short)+'</p>'+
+    '<div class="hero-body"><h3>'+esc(p.label)+' phase</h3><p class="focus">'+esc(p.short)+'</p>'+
+    '<details class="hguide-d"'+(ui.heroOpen?' open':'')+'><summary>What this phase usually brings</summary><div class="hguide">'+heroGuide(info.phase)+'</div></details>'+
     (info.late?'<p class="note">This is day '+info.day+', past your usual '+info.L+'-day cycle. Cycles vary.</p>':'')+
     (info.projected&&d>T?'<p class="note">Projected from your average cycle length.</p>':'')+
     '<p class="note">'+esc(nextLine)+'</p>'+startBtn+'</div></section>';
@@ -420,6 +433,7 @@ function renderDay(){
     [1,2,3,4,5].map(n=>'<button type="button" class="opt" data-act="set" data-field="energy" data-v="'+n+'" aria-pressed="'+(l.energy===n)+'" aria-label="Energy '+n+' of 5">'+n+'</button>').join('')+
     '</div><div class="caprow"><span class="cap">Low</span><span class="cap">High</span></div></div></div>'+
     '<div class="field"><span class="lbl" id="l-mood">Mood <span class="cap" style="font-weight:400">Select all that fit</span></span>'+moodGroup(moodsOf(l))+'</div>'+
+    '<div class="field"><span class="lbl">Crying</span>'+segGroup('crying',CRYING,l.crying)+'</div>'+
     '<div class="field"><label class="lbl" for="sleep">Sleep (hours)</label><input type="number" id="sleep" inputmode="decimal" step="0.5" min="0" max="16" data-field="sleep" data-type="num" value="'+(typeof l.sleep==='number'?l.sleep:'')+'"></div>'+
     '<div class="field"><span class="lbl">Cramps</span>'+segGroup('cramps',CRAMPS,l.cramps)+'</div>'+
     '<div class="field"><span class="lbl">Acne</span>'+segGroup('acne',ACNE,l.acne)+'</div>'+
@@ -430,7 +444,6 @@ function renderDay(){
     '</section>'+
     '<section class="panel" aria-labelledby="td-h"><h2 id="td-h">To-dos</h2>'+todosHTML(ui.date)+'</section></div>';
 
-  html+='<details class="panel guide" style="margin-top:20px" open><summary>Guide for the '+esc(p.label.toLowerCase())+' phase</summary>'+guideBlock(info.phase)+'</details>';
   return html;
 }
 
@@ -449,6 +462,7 @@ function renderWeek(){
     const bits=[];
     if(l.energy) bits.push('Energy '+l.energy);
     if(moodsOf(l).length) bits.push(moodsOf(l).join(', '));
+    if(l.crying&&l.crying!=='None') bits.push('Crying: '+l.crying.toLowerCase());
     if(l.h0) bits.push(shortLabel(state.habits[0]));
     if(l.h1) bits.push(shortLabel(state.habits[1]));
     html+='<section class="wday'+(n===T?' today':'')+'" data-phase="'+info.phase+'" aria-label="'+esc(fmtLong(n))+'">'+
@@ -492,7 +506,7 @@ function renderPatterns(){
   const S=stats(),P=state.periodLength,T=dn(todayKey());
   if(!S.starts.length) return needStarts();
   const agg={},byDay={};
-  ORDER.forEach(p=>agg[p]={n:0,energy:[],sleep:[],moods:{},cramps:0,acne:0,h0:0,h1:0});
+  ORDER.forEach(p=>agg[p]={n:0,energy:[],sleep:[],moods:{},cramps:0,crying:0,acne:0,h0:0,h1:0});
   let total=0;
   Object.keys(state.logs).forEach(k=>{
     const l=state.logs[k];if(!hasCheckin(l)) return;
@@ -502,6 +516,7 @@ function renderPatterns(){
     if(typeof l.sleep==='number') a.sleep.push(l.sleep);
     moodsOf(l).forEach(m=>{a.moods[m]=(a.moods[m]||0)+1;});
     if(l.cramps&&l.cramps!=='None') a.cramps++;
+    if(l.crying&&l.crying!=='None') a.crying++;
     if(l.acne&&l.acne!=='None') a.acne++;
     if(l.h0) a.h0++;
     if(l.h1) a.h1++;
@@ -513,7 +528,7 @@ function renderPatterns(){
     const top=Object.keys(a.moods).sort((x,y)=>a.moods[y]-a.moods[x]||MOODS.indexOf(x)-MOODS.indexOf(y)).slice(0,2).join(', ')||'–';
     return '<tr data-phase="'+p+'"><th scope="row">'+chip(p)+'</th><td>'+a.n+'</td><td>'+esc(PHASES[p].energy)+'</td>'+
       '<td>'+f1(e)+(e!=null?'<div class="bar" aria-hidden="true"><span style="width:'+(e/5*100)+'%"></span></div>':'')+'</td>'+
-      '<td>'+f1(avg(a.sleep))+'</td><td>'+esc(top)+'</td><td>'+a.cramps+'</td><td>'+a.acne+'</td>'+
+      '<td>'+f1(avg(a.sleep))+'</td><td>'+esc(top)+'</td><td>'+a.crying+'</td><td>'+a.cramps+'</td><td>'+a.acne+'</td>'+
       '<td>'+pct(a.h0,a.n)+'</td><td>'+pct(a.h1,a.n)+'</td></tr>';
   }).join('');
   const withE=ORDER.filter(p=>agg[p].energy.length>=3).map(p=>[p,avg(agg[p].energy)]).sort((a,b)=>b[1]-a[1]);
@@ -534,7 +549,7 @@ function renderPatterns(){
   }
   const chart=any?'<h2 style="margin-top:22px">Energy by cycle day</h2><svg class="cdchart" viewBox="0 0 '+W+' 94" role="img" aria-label="Average energy for each cycle day">'+bars+'</svg><p class="note">Bar colors match the phases. Taller bars mean higher average energy.</p>':'';
   return '<section class="panel"><h2>How your check-ins line up with the guide</h2>'+insight+
-    '<div class="tblwrap"><table class="tbl"><thead><tr><th>Phase</th><th>Days logged</th><th>Guide says</th><th>Your energy (1–5)</th><th>Sleep (hrs)</th><th>Common moods</th><th>Cramp days</th><th>Acne days</th><th>'+esc(shortLabel(state.habits[0]))+'</th><th>'+esc(shortLabel(state.habits[1]))+'</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+chart+'</section>';
+    '<div class="tblwrap"><table class="tbl"><thead><tr><th>Phase</th><th>Days logged</th><th>Guide says</th><th>Your energy (1–5)</th><th>Sleep (hrs)</th><th>Common moods</th><th>Crying days</th><th>Cramp days</th><th>Acne days</th><th>'+esc(shortLabel(state.habits[0]))+'</th><th>'+esc(shortLabel(state.habits[1]))+'</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+chart+'</section>';
 }
 
 function renderGuide(){
@@ -697,6 +712,9 @@ document.addEventListener('change',e=>{
   else if(s==='weekStart'){state.weekStart=Number(t.value)===0?0:1;save();render();}
   else if(s==='h0'||s==='h1'){state.habits[s==='h0'?0:1]=t.value.trim()||defaults().habits[s==='h0'?0:1];save();}
 });
+document.addEventListener('toggle',e=>{
+  if(e.target.classList&&e.target.classList.contains('hguide-d')) ui.heroOpen=e.target.open;
+},true);
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.matches&&e.target.matches('[data-todo-input]')){e.preventDefault();addTodo(e.target.dataset.date);}
 });
